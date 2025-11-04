@@ -4,7 +4,7 @@ from pathlib import Path
 import polars as pl
 
 from .columns import C
-from .metrics import rank_auroc, precision_at
+from .metrics import rank_auroc
 
 _REPO = Path(__file__).parent.parent.parent
 _PLI_REFERENCE_FILE = _REPO / "data" / "processed" / "pli_reference.csv"
@@ -26,8 +26,11 @@ def main(
     prefix: str = "",
 ):
     logger.info("Loading data...")
+    logger.info(f"Clean predictions: {clean_prediction_file.absolute().resolve()}")
     clean_predictions = pl.read_csv(clean_prediction_file)
+    logger.info(f"Masked predictions: {masked_prediction_file.absolute().resolve()}")
     masked_predictions = pl.read_csv(masked_prediction_file)
+    logger.info(f"PLI reference: {plip_explanation_file.absolute()}")
     plip_explanations = pl.read_csv(plip_explanation_file)
     plip_explanations = plip_explanations.with_columns(
         pl.when(pl.col("H-Bond (P-Acc)") > 0)
@@ -65,7 +68,7 @@ def main(
 
     assert data[C.ACTIVITY_ID].value_counts().max()["count"].item() <= 85
 
-    logger.info("Computing ranks...")
+    logger.info("Computing ranks and metrics...")
     # highest attribution first
     data = data.with_columns(
         # attribution ranks within complexes
@@ -91,16 +94,12 @@ def main(
     data = data.with_columns(
         # isolated attribution rank (rank only relative to "irrelevant" residues)
         (pl.col(C.ATTR_RANK) - pl.col(C.NUM_RELEVANT) + 1).alias(C.ISOLATED_RANK),
-    )
+    ).filter(pl.col(C.IS_RELEVANT))
     rank_auroc_data = data.group_by(C.ACTIVITY_ID).agg(rank_auroc)
-    precision = data.group_by(C.ACTIVITY_ID).agg(
-        precision_at(1), precision_at(3), precision_at(5), precision_at(10)
-    )
     rank_auroc_by_interaction = data.group_by("interaction_type").agg(rank_auroc)
     logger.info("Writing results to disk...")
     data.drop_nulls().write_csv(outdir / f"{prefix}attribution_ranking.csv")
     rank_auroc_data.write_csv(outdir / f"{prefix}attribution_ranking_auroc.csv")
-    precision.write_csv(outdir / f"{prefix}attribution_ranking_precision.csv")
     rank_auroc_by_interaction.write_csv(
         outdir / f"{prefix}attribution_ranking_auroc_by_interaction.csv"
     )

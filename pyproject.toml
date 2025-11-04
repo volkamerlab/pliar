@@ -15,3 +15,15 @@ build-backend = "setuptools.build_meta"
 
 [tools.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv]
+default-groups = ["eval"]
+
+[dependency-groups]
+eval = [
+    "matplotlib>=3.10.7",
+    "notebook>=7.4.7",
+    "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+]

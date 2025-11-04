@@ -3,7 +3,7 @@ from enum import StrEnum
 
 class C(StrEnum):
     ACTIVITY_ID = "activity_id"
-    MASKED_RESNR = "masked_residue"
+    MASKED_RESNR = "masked_residue_index"
     RESNR = "residue_number"
     DELTA = "delta"
     PRED = "predicted_value"

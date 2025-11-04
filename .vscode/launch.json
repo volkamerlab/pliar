@@ -11,8 +11,8 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": [
-                "data/predictions/clean.csv",
-                "data/predictions/masked.csv",
+                "data/example/clean.csv",
+                "data/example/masked.csv",
             ]
         }
     ]
