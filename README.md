@@ -12,12 +12,20 @@ Note that model training and inference was conducted using [the kinodata3D codeb
 This repository only contains code to evaluate Protein-Ligand Interaction (PLI) alignment of already trained models whose predictions are provided in the required format.
 
 ## Installation
+### Execution Environment
 We recommend using uv to install and run our code. To install uv, please follow the instructions at https://docs.astral.sh/uv/.
 
 Installing the package and its dependencies can then be done by running
 ```bash
 uv sync
 ```
+### Data Acquisition
+Running our alignment scripts requires reference explanation data. 
+You can either [download this data here](https://zenodo.org/records/17488593) and extract it manually or run
+```
+uv run obtain_data.py https://zenodo.org/records/17488593 .
+```
+for an automated version.
 
 ## Usage
 ### Model evaluation prerequisites
