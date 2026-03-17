@@ -26,10 +26,6 @@ def main(
     prefix: str = "",
 ):
     logger.info("Loading data...")
-    logger.info(f"Clean predictions: {clean_prediction_file.absolute().resolve()}")
-    clean_predictions = pl.read_csv(clean_prediction_file)
-    logger.info(f"Masked predictions: {masked_prediction_file.absolute().resolve()}")
-    masked_predictions = pl.read_csv(masked_prediction_file)
     logger.info(f"PLI reference: {plip_explanation_file.absolute()}")
     plip_explanations = pl.read_csv(plip_explanation_file)
     plip_explanations = plip_explanations.with_columns(
@@ -47,18 +43,26 @@ def main(
         .then(pl.lit("Salt Bridge"))
         .alias("interaction_type")
     )
-    activity_id_subset = plip_explanations[C.ACTIVITY_ID].unique()
+    logger.info(f"Clean predictions: {clean_prediction_file.absolute().resolve()}")
+    clean_predictions = (
+        pl.scan_csv(clean_prediction_file)
+        .join(plip_explanations, on="activity_id", how="semi")
+        .collect()
+    )
+    logger.info(f"Masked predictions: {masked_prediction_file.absolute().resolve()}")
+    masked_predictions = (
+        pl.scan_csv(masked_prediction_file)
+        .join(plip_explanations, on="activity_id", how="semi")
+        .collect()
+    )
 
     logger.info("Computing prediction deltas...")
-    delta = (
-        clean_predictions.join(
-            masked_predictions,
-            on="activity_id",
-            suffix="_masked",
-        )
-        .filter(pl.col(C.ACTIVITY_ID).is_in(activity_id_subset))
-        .with_columns((pl.col(C.PRED) - pl.col(f"{C.PRED}_masked")).alias(C.DELTA))
+    clean_predictions = clean_predictions.join(
+        plip_explanations.select("activity_id"), on="activity_id"
     )
+    delta = clean_predictions.join(
+        masked_predictions, on="activity_id", suffix="_masked", how="inner"
+    ).with_columns((pl.col(C.PRED) - pl.col(f"{C.PRED}_masked")).alias(C.DELTA))
     data = delta.join(
         plip_explanations,
         how="left",
