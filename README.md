@@ -21,7 +21,7 @@ uv sync
 ```
 ### Data Acquisition
 Running our alignment scripts requires reference explanation data. 
-You can either [download this data here](https://zenodo.org/records/17488593) and extract it manually or run
+You can either [download this data from Zenodo](https://zenodo.org/records/17488593) and extract it manually or run
 ```
 uv run obtain_data.py https://zenodo.org/records/17488593 .
 ```
@@ -59,14 +59,20 @@ The evaluation method can also be called programmatically, see e.g. [run_pliar.i
 This script will produce csv files with the attribution rankings and auroc metrics.
 
 ### Reproducing paper results
+
+#### PLI-alignment scores
 To reproduce paper results you will need to download additional data from Zenodo: 
 This includes processed PLIP interaction data as well as model predictions for the models evaluated in the paper.
 Either download and extract the data manually or run
 ```
-uv run obtain_data.py https://zenodo.org/records/17488593 .
+uv run obtain_data.py https://zenodo.org/records/17488593 --target-dir .
 ```
 for an automated version.
 
+#### Model training and masked residue predictions
+To reproduce the full pipeline including model training and inference on masked structures you will need to use the kinodata3D codebase and the provided training scripts.
+You can run ```setup_kinodata3d_models.sh``` provided here to clone the kinodata3D repository and set up the required data.
+Consult the readmes in the resulting `kinodata3d_models` directory for further instructions, especially `kinodata3d_models/pli_alignment_scripts/README.md`.
 
 ## Citing this work
 If you use this code in your research, please cite the following paper
