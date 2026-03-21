@@ -11,6 +11,7 @@ Example:
 
 import os
 import re
+from typing import Optional
 import requests
 from zipfile import ZipFile
 import typer
@@ -64,7 +65,7 @@ def extract_zip(file_path, target_dir):
     print(f"✅ Extracted {os.path.basename(file_path)}")
 
 
-def main(zenodo_url: str, target_dir: str = "."):
+def main(zenodo_url: str, target_dir: str = ".", single_file: Optional[str] = None):
     if not os.path.exists(target_dir):
         raise FileNotFoundError(target_dir)
 
@@ -77,6 +78,18 @@ def main(zenodo_url: str, target_dir: str = "."):
         return
 
     print(f"Found {len(zip_files)} zip file(s).")
+
+    if single_file is not None:
+        print(f"\nSearching for a single file {single_file} in {zenodo_url}")
+        zip_files = [item for item in zip_files if item["name"] == single_file]
+        match len(zip_files):
+            case 0:
+                print("No such file found! Exiting.")
+                exit(0)
+            case 1:
+                print("File found! Continuing...")
+            case _:
+                raise RuntimeError(f"Found duplicate file {single_file}!")
 
     for zip_info in zip_files:
         file_path = download_zip_to_disk(zip_info, target_dir)
