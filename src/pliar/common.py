@@ -1,7 +1,8 @@
 import logging
-import shutil
+from collections import defaultdict
 from enum import StrEnum
 from pathlib import Path
+from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +15,8 @@ from matplotlib.projections import register_projection
 from matplotlib.projections.polar import PolarAxes
 from matplotlib.spines import Spine
 from matplotlib.transforms import Affine2D
+from scipy.stats import false_discovery_control as fdr
+from scipy.stats import ttest_rel, wilcoxon
 
 
 class COLS(StrEnum):
@@ -357,3 +360,88 @@ def radar_plot(
 
     ax.set_varlabels(factor_order)
     return ax
+
+
+def fold_plot(
+    data: pl.DataFrame,
+    x,
+    y,
+    fold="split_fold",
+    alpha=0.5,
+    linewidth=1,
+    s=100,
+    zorder=1,
+    color=None,
+    label=None,
+    hue=None,
+    palette="Set2",
+):
+    if not isinstance(data, pl.DataFrame):
+        data = pl.from_pandas(data)
+    palette = sns.color_palette(palette, n_colors=data[hue].n_unique())
+    ax = plt.gca()
+    for _, group in data.group_by(fold):
+        group = group.sort(x)
+        ax.plot(
+            group[x],
+            group[y],
+            color="black",
+            alpha=alpha,
+            zorder=zorder,
+            linewidth=linewidth,
+        )
+
+    sns.scatterplot(data, x=x, y=y, hue=hue, palette=palette, s=s, alpha=0.7)
+    ax.xaxis.grid(False)
+    ax.set_xlabel("")
+    ax.set_xticklabels([""] * len(ax.get_xticks()))
+
+
+def add_sig_bracket(ax, x1, x2, y, h, h2=None, text="*"):
+    """
+    ax  : matplotlib axis
+    x1  : first box position (0,1,2...)
+    x2  : second box position
+    y   : height where bracket starts
+    h   : bracket height
+    text: annotation (e.g. *, **, ns)
+    """
+    if h2 is None:
+        ax.plot([x1, x1, x2, x2], [y, y + h, y + h, y], lw=1, c="black")
+    else:
+        ax.plot([x1, x1, x2, x2], [y, y + h, y + h, y + h - h2], lw=1, c="black")
+    ax.text((x1 + x2) / 2, y + h, text, ha="center", va="bottom", weight="bold")
+
+
+def multiple_paired_comparisons(
+    data: pl.DataFrame,
+    comparisons: Sequence[tuple[str]],
+    over: str = "split_type",
+    subject: str = "model",
+    variable: str = "mae",
+    pairing_factor: str = "split_fold",
+    alternative: str = "less",
+) -> pl.DataFrame:
+    p_values = defaultdict(list)
+    for subj1, subj2 in comparisons:
+        for index in data[over].unique():
+            data1 = data.filter(pl.col(subject) == subj1, pl.col(over) == index)
+            data2 = data.filter(pl.col(subject) == subj2, pl.col(over) == index)
+            paired = data1.join(data2, on=pairing_factor)
+            x = paired[variable].to_numpy()
+            y = paired[f"{variable}_right"].to_numpy()
+            p_values[f"{subject}1"].append(subj1)
+            p_values[f"{subject}2"].append(subj2)
+            p_values[over].append(index)
+            for method, fn in {"t-test": ttest_rel, "wilcoxon": wilcoxon}.items():
+                test_result = fn(x, y, alternative=alternative)
+                p_values[method].append(test_result.pvalue)
+                if method == "t-test":
+                    # cohens_d = test_result.statistic / (np.sqrt(x.shape[0]))
+                    cohens_d = (x - y).mean() / (x - y).std()
+                    p_values["cohens_d"].append(cohens_d)
+
+    for method in ("t-test", "wilcoxon"):
+        p_values[method] = fdr(p_values[method])
+
+    return pl.DataFrame(p_values)
