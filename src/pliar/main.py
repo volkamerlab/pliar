@@ -18,6 +18,11 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 
+# debugging
+def describe_size(df, col):
+    print(col, df.group_by(col).agg(pl.len().alias("size")).select("size").describe())
+
+
 def main(
     clean_prediction_file: Path,
     masked_prediction_file: Path,
@@ -25,9 +30,34 @@ def main(
     outdir: Path = _REPO,
     prefix: str = "",
 ):
+    """
+    Evaluate the R-AUROC PLI-alignment of a model based on it's predictions over unaltered (clean)
+    kinase-ligand complexes and modified inputs, where KLIFS residues were masked one-at-a-time.
+
+    For the schema of the clean and masked prediction tabular data consider the README.md file.
+
+    Args:
+        clean_prediction_file (Path): Predictions on clean inputs
+        masked_prediction_file (Path): Predictions on masked inputs.
+        plip_explanation_file (Path, optional): Source of reference explantions. Defaults to _PLI_REFERENCE_FILE.
+        outdir (Path, optional): Where write the results to. Defaults to _REPO.
+        prefix (str, optional): Prefix that will be appended to stems of output files. Defaults to "".
+    """
     logger.info("Loading data...")
     logger.info(f"PLI reference: {plip_explanation_file.absolute()}")
-    plip_explanations = pl.read_csv(plip_explanation_file)
+    plip_explanations = pl.scan_csv(plip_explanation_file)
+    logger.info(f"Clean predictions: {clean_prediction_file.absolute().resolve()}")
+    clean_predictions = (
+        pl.scan_csv(clean_prediction_file)
+        .join(plip_explanations.select("activity_id"), on="activity_id", how="semi")
+        .collect()
+    )
+    logger.info(f"Masked predictions: {masked_prediction_file.absolute().resolve()}")
+    masked_predictions = (
+        pl.scan_csv(masked_prediction_file)
+        .join(plip_explanations.select("activity_id"), on="activity_id", how="semi")
+        .collect()
+    )
     plip_explanations = plip_explanations.with_columns(
         pl.when(pl.col("H-Bond (P-Acc)") > 0)
         .then(pl.lit("H-Bond (PA)"))
@@ -42,24 +72,9 @@ def main(
         .when(pl.col("Salt Bridge") > 0)
         .then(pl.lit("Salt Bridge"))
         .alias("interaction_type")
-    )
-    logger.info(f"Clean predictions: {clean_prediction_file.absolute().resolve()}")
-    clean_predictions = (
-        pl.scan_csv(clean_prediction_file)
-        .join(plip_explanations, on="activity_id", how="semi")
-        .collect()
-    )
-    logger.info(f"Masked predictions: {masked_prediction_file.absolute().resolve()}")
-    masked_predictions = (
-        pl.scan_csv(masked_prediction_file)
-        .join(plip_explanations, on="activity_id", how="semi")
-        .collect()
-    )
+    ).collect()
 
     logger.info("Computing prediction deltas...")
-    clean_predictions = clean_predictions.join(
-        plip_explanations.select("activity_id"), on="activity_id"
-    )
     delta = clean_predictions.join(
         masked_predictions, on="activity_id", suffix="_masked", how="inner"
     ).with_columns((pl.col(C.PRED) - pl.col(f"{C.PRED}_masked")).alias(C.DELTA))
@@ -70,7 +85,9 @@ def main(
         right_on=[C.ACTIVITY_ID, C.RESNR],
     )
 
-    assert data[C.ACTIVITY_ID].value_counts().max()["count"].item() <= 85
+    assert (
+        num_entries := data[C.ACTIVITY_ID].value_counts().max()["count"].item()
+    ) <= 85, num_entries
 
     logger.info("Computing ranks and metrics...")
     # highest attribution first
@@ -102,8 +119,17 @@ def main(
     rank_auroc_data = data.group_by(C.ACTIVITY_ID).agg(rank_auroc)
     rank_auroc_by_interaction = data.group_by("interaction_type").agg(rank_auroc)
     logger.info("Writing results to disk...")
-    data.drop_nulls().write_csv(outdir / f"{prefix}attribution_ranking.csv")
-    rank_auroc_data.write_csv(outdir / f"{prefix}attribution_ranking_auroc.csv")
-    rank_auroc_by_interaction.write_csv(
+    attribution_ranks = outdir / f"{prefix}attribution_ranking.csv"
+    attribution_rank_auroc = outdir / f"{prefix}attribution_ranking_auroc.csv"
+    auroc_by_interaction = (
         outdir / f"{prefix}attribution_ranking_auroc_by_interaction.csv"
     )
+
+    logger.info(" ~ attribution ranks: %s" % str(attribution_ranks))
+    logger.info(" ~ attribution rank auroc: %s" % str(attribution_rank_auroc))
+    logger.info(
+        " ~ attribution rank auroc by interaction type: %s" % str(auroc_by_interaction)
+    )
+    data.drop_nulls().write_csv(attribution_ranks)
+    rank_auroc_data.write_csv(attribution_rank_auroc)
+    rank_auroc_by_interaction.write_csv(auroc_by_interaction)
